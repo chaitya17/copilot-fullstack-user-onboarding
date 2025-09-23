@@ -1,0 +1,185 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-onboard-service
+  labels:
+    app: user-onboard-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: user-onboard-service
+  template:
+    metadata:
+      labels:
+        app: user-onboard-service
+    spec:
+      containers:
+      - name: user-onboard-service
+        image: ghcr.io/your-org/user-onboard-service:latest
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        # Database Configuration
+        - name: DB_TYPE
+          value: "mssql"  # or "oracle"
+        - name: JDBC_URL
+          valueFrom:
+            secretKeyRef:
+              name: database-secret
+              key: jdbc-url
+        - name: DB_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: database-secret
+              key: username
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: database-secret
+              key: password
+        - name: HIBERNATE_DIALECT
+          value: "org.hibernate.dialect.SQLServerDialect"  # or org.hibernate.dialect.Oracle12cDialect
+        
+        # JWT Configuration
+        - name: JWT_PRIVATE_KEY_PATH
+          value: "/var/secrets/jwt/private_key.pem"
+        - name: JWT_PUBLIC_KEY_PATH
+          value: "/var/secrets/jwt/public_key.pem"
+        - name: JWT_ACCESS_TOKEN_EXPIRY
+          value: "15m"
+        - name: JWT_REFRESH_TOKEN_EXPIRY
+          value: "7d"
+        
+        # RabbitMQ Configuration
+        - name: RABBITMQ_HOST
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-secret
+              key: host
+        - name: RABBITMQ_PORT
+          value: "5672"
+        - name: RABBITMQ_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-secret
+              key: username
+        - name: RABBITMQ_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: rabbitmq-secret
+              key: password
+        
+        # Email Configuration
+        - name: EMAIL_ENABLED
+          value: "true"
+        - name: SMTP_HOST
+          valueFrom:
+            secretKeyRef:
+              name: email-secret
+              key: smtp-host
+        - name: SMTP_PORT
+          value: "587"
+        - name: SMTP_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: email-secret
+              key: smtp-username
+        - name: SMTP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: email-secret
+              key: smtp-password
+        
+        # Spring Profile
+        - name: SPRING_PROFILES_ACTIVE
+          value: "prod"
+        
+        volumeMounts:
+        - name: jwt-keys
+          mountPath: /var/secrets/jwt
+          readOnly: true
+        
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1"
+        
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+      
+      volumes:
+      - name: jwt-keys
+        secret:
+          secretName: jwt-keys-secret
+          defaultMode: 0400
+      
+      securityContext:
+        fsGroup: 1000
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-onboard-service
+  labels:
+    app: user-onboard-service
+spec:
+  selector:
+    app: user-onboard-service
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+    protocol: TCP
+  type: ClusterIP
+
+---
+# TODO: Create these secrets before deploying:
+# kubectl create secret generic database-secret \
+#   --from-literal=jdbc-url="jdbc:sqlserver://your-db-server:1433;database=useronboard" \
+#   --from-literal=username="your-db-user" \
+#   --from-literal=password="your-db-password"
+
+# kubectl create secret generic rabbitmq-secret \
+#   --from-literal=host="your-rabbitmq-host" \
+#   --from-literal=username="your-rabbitmq-user" \
+#   --from-literal=password="your-rabbitmq-password"
+
+# kubectl create secret generic email-secret \
+#   --from-literal=smtp-host="your-smtp-host" \
+#   --from-literal=smtp-username="your-smtp-user" \
+#   --from-literal=smtp-password="your-smtp-password"
+
+# kubectl create secret generic jwt-keys-secret \
+#   --from-file=private_key.pem=path/to/your/private_key.pem \
+#   --from-file=public_key.pem=path/to/your/public_key.pem
+
