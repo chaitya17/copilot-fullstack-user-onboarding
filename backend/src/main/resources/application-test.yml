@@ -1,0 +1,46 @@
+# Test Configuration - Uses H2 for fast testing
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password: 
+    driver-class-name: org.h2.Driver
+  
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    database-platform: org.hibernate.dialect.H2Dialect
+  
+  flyway:
+    enabled: false  # Disable Flyway for tests, use JPA schema generation
+  
+  # Test RabbitMQ Configuration (Embedded)
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+
+# Security Configuration for Tests
+security:
+  jwt:
+    private-key-path: ${JWT_PRIVATE_KEY_PATH:src/test/resources/test-private-key.pem}
+    public-key-path: ${JWT_PUBLIC_KEY_PATH:src/test/resources/test-public-key.pem}
+    access-token-expiry: 5m
+    refresh-token-expiry: 1h
+
+# Database Type Configuration
+app:
+  database:
+    type: h2
+  email:
+    enabled: false
+
+# Logging Configuration for Tests
+logging:
+  level:
+    com.useronboard: INFO
+    org.springframework.security: WARN
+    org.hibernate: WARN
+    org.flywaydb: WARN
