@@ -1,0 +1,89 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "alert_rules.yml"
+
+scrape_configs:
+  # Backend Spring Boot application metrics
+  - job_name: 'user-onboard-backend'
+    static_configs:
+      - targets: ['user-onboard-backend:8080']
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 30s
+
+  # Frontend health checks
+  - job_name: 'user-onboard-frontend'
+    static_configs:
+      - targets: ['user-onboard-frontend:3000']
+    metrics_path: '/health'
+    scrape_interval: 60s
+
+  # RabbitMQ metrics
+  - job_name: 'rabbitmq'
+    static_configs:
+      - targets: ['user-onboard-rabbitmq:15692']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # Database metrics - MSSQL
+  - job_name: 'mssql-exporter'
+    static_configs:
+      - targets: ['mssql-exporter:9399']
+    scrape_interval: 60s
+    # Note: Requires sql_exporter or mssql_exporter to be deployed
+    # Configuration depends on your MSSQL setup (local container or managed service)
+
+  # Database metrics - Oracle (when enabled)
+  # - job_name: 'oracle-exporter'
+  #   static_configs:
+  #     - targets: ['oracle-exporter:9161']
+  #   scrape_interval: 60s
+  #   # Note: Requires oracle_exporter to be deployed
+  #   # Additional Oracle monitoring user permissions may be required
+
+  # Kubernetes cluster metrics
+  - job_name: 'kubernetes-apiservers'
+    kubernetes_sd_configs:
+      - role: endpoints
+    scheme: https
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+        action: keep
+        regex: default;kubernetes;https
+
+  # Kubernetes pods
+  - job_name: 'kubernetes-pods'
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: kubernetes_namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: kubernetes_pod_name
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093

@@ -1,0 +1,20 @@
+apiVersion: v2
+name: user-onboard
+description: A Helm chart for User Onboard application with dual database support (MSSQL/Oracle)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+home: https://github.com/your-org/user-onboard
+sources:
+  - https://github.com/your-org/user-onboard
+keywords:
+  - user-onboard
+  - authentication
+  - spring-boot
+  - react
+  - mssql
+  - oracle
+maintainers:
+  - name: DevOps Team
+    email: devops@your-org.com
+

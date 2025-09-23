@@ -1,0 +1,101 @@
+# Trivy Security Scanning Configuration
+# This configuration defines security scanning rules for the User Onboard application
+
+# Severity levels to report
+severity:
+  - CRITICAL
+  - HIGH
+  - MEDIUM
+
+# Vulnerability databases to check
+vuln-type:
+  - os
+  - library
+
+# Skip files/directories from scanning
+skip-files:
+  - "**/.git/**"
+  - "**/node_modules/**"
+  - "**/target/**"
+  - "**/dist/**"
+  - "**/*.min.js"
+
+# Skip specific vulnerabilities (use with caution)
+skip-dirs:
+  - "/usr/share/doc"
+  - "/tmp"
+
+# Custom security policies
+policy:
+  # Database-specific security checks
+  database:
+    # MSSQL Security
+    mssql:
+      - check: "strong-password"
+        description: "Ensure MSSQL SA password meets complexity requirements"
+      - check: "encrypted-connections"
+        description: "Verify MSSQL connections use encryption"
+    
+    # Oracle Security  
+    oracle:
+      - check: "default-passwords"
+        description: "Ensure Oracle default passwords are changed"
+      - check: "listener-security"
+        description: "Verify Oracle listener security configuration"
+
+  # Application security
+  application:
+    - check: "jwt-key-strength"
+      description: "Ensure JWT keys use appropriate key length"
+    - check: "cors-configuration"
+      description: "Verify CORS is properly configured"
+    - check: "input-validation"
+      description: "Check for proper input validation"
+
+# Container image scanning rules
+container:
+  # Base image recommendations
+  base-images:
+    java: "openjdk:17-jre-slim"
+    node: "node:18-alpine"
+    nginx: "nginx:alpine"
+  
+  # Security best practices
+  security-rules:
+    - name: "non-root-user"
+      description: "Container should run as non-root user"
+      severity: "HIGH"
+    - name: "read-only-filesystem"
+      description: "Container filesystem should be read-only where possible"
+      severity: "MEDIUM"
+    - name: "no-secrets-in-env"
+      description: "Secrets should not be passed as environment variables"
+      severity: "CRITICAL"
+
+# Dependency scanning
+dependencies:
+  # Java dependencies (Maven)
+  java:
+    exclude-groups:
+      - "test"
+      - "provided"
+  
+  # Node.js dependencies (npm)
+  nodejs:
+    exclude-dev: true
+    
+# License scanning
+license:
+  allowed:
+    - "Apache-2.0"
+    - "MIT"
+    - "BSD-3-Clause"
+    - "ISC"
+  
+  denied:
+    - "GPL-3.0"
+    - "AGPL-3.0"
+  
+  # Oracle-specific license considerations
+  oracle:
+    warning: "Oracle JDBC driver requires appropriate Oracle license for production use"

@@ -1,0 +1,204 @@
+# Default values for user-onboard.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Global configuration
+global:
+  registry: ghcr.io/your-org
+  pullPolicy: IfNotPresent
+  storageClass: ""
+
+# Database configuration - supports MSSQL and Oracle
+database:
+  # Database type: mssql or oracle
+  type: mssql
+  
+  # External database configuration (recommended for production)
+  external:
+    enabled: true
+    # For MSSQL: jdbc:sqlserver://your-server.database.windows.net:1433;database=useronboard
+    # For Oracle: jdbc:oracle:thin:@your-oracle-host:1521/servicename
+    jdbcUrl: ""
+    username: ""
+    # Reference to secret containing database credentials
+    existingSecret: "user-onboard-db-secret"
+    secretKeys:
+      username: "username"
+      password: "password"
+  
+  # Hibernate dialect configuration
+  hibernate:
+    # MSSQL: org.hibernate.dialect.SQLServerDialect
+    # Oracle: org.hibernate.dialect.Oracle12cDialect
+    dialect: org.hibernate.dialect.SQLServerDialect
+
+# Backend application configuration
+backend:
+  enabled: true
+  replicaCount: 2
+  
+  image:
+    repository: user-onboard-service
+    pullPolicy: IfNotPresent
+    tag: "latest"
+  
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+  
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts: []
+    tls: []
+  
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 500m
+      memory: 512Mi
+  
+  # Environment-specific configuration
+  env:
+    springProfile: prod
+    jwtKeyPath: /var/secrets/jwt
+    emailEnabled: true
+  
+  # Security configuration
+  security:
+    # JWT keys stored in Kubernetes secret
+    jwtSecret: "user-onboard-jwt-secret"
+  
+  # Health check configuration
+  healthCheck:
+    enabled: true
+    path: /actuator/health
+    initialDelaySeconds: 60
+    periodSeconds: 30
+  
+  # Horizontal Pod Autoscaler
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+
+# Frontend application configuration
+frontend:
+  enabled: true
+  replicaCount: 2
+  
+  image:
+    repository: user-onboard-ui
+    pullPolicy: IfNotPresent
+    tag: "latest"
+  
+  service:
+    type: ClusterIP
+    port: 3000
+    targetPort: 3000
+  
+  ingress:
+    enabled: true
+    className: "nginx"
+    annotations:
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    hosts:
+      - host: user-onboard.your-domain.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: user-onboard-tls
+        hosts:
+          - user-onboard.your-domain.com
+  
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  
+  # Environment configuration
+  env:
+    apiUrl: http://user-onboard-backend:8080
+
+# Message queue configuration
+rabbitmq:
+  enabled: true
+  
+  # External RabbitMQ configuration
+  external:
+    enabled: false
+    host: ""
+    port: 5672
+    username: ""
+    existingSecret: "user-onboard-rabbitmq-secret"
+  
+  # Internal RabbitMQ (for development)
+  internal:
+    image: rabbitmq:3-management
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 200m
+        memory: 256Mi
+
+# Monitoring configuration
+monitoring:
+  prometheus:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+  
+  grafana:
+    enabled: true
+    dashboard:
+      enabled: true
+
+# Security scanning
+security:
+  networkPolicy:
+    enabled: false
+  
+  podSecurityPolicy:
+    enabled: false
+
+# Node selector for database-specific workloads
+nodeSelector: {}
+
+# Tolerations for database-specific workloads
+tolerations: []
+
+# Affinity rules
+affinity: {}
+
+# Service account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Pod security context
+podSecurityContext:
+  fsGroup: 1001
+
+# Security context
+securityContext:
+  allowPrivilegeEscalation: false
+  runAsNonRoot: true
+  runAsUser: 1001
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true

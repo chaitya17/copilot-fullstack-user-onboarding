@@ -1,0 +1,64 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: user-onboard-frontend
+  labels:
+    app: user-onboard
+    component: frontend
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - user-onboard.your-domain.com
+    secretName: user-onboard-tls
+  rules:
+  - host: user-onboard.your-domain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: user-onboard-frontend
+            port:
+              number: 3000
+
+---
+# Optional: Backend API Ingress for direct API access
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: user-onboard-backend-api
+  labels:
+    app: user-onboard
+    component: backend
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://user-onboard.your-domain.com"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "Authorization, Content-Type"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - api.user-onboard.your-domain.com
+    secretName: user-onboard-api-tls
+  rules:
+  - host: api.user-onboard.your-domain.com
+    http:
+      paths:
+      - path: /api(/|$)(.*)
+        pathType: Prefix
+        backend:
+          service:
+            name: user-onboard-backend
+            port:
+              number: 8080
