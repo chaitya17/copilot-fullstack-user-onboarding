@@ -1,0 +1,40 @@
+# Text files
+*.txt text
+*.md text
+*.yml text
+*.yaml text
+*.json text
+*.xml text
+*.properties text
+*.sql text
+
+# Source code
+*.java text
+*.js text
+*.jsx text
+*.ts text
+*.tsx text
+*.css text
+*.scss text
+*.html text
+
+# Shell scripts
+*.sh text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files
+*.jar binary
+*.war binary
+*.zip binary
+*.tar.gz binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+
+# Line ending normalization
+* text=auto
