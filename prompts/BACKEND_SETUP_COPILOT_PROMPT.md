@@ -1,0 +1,53 @@
+You are an expert Java Spring Boot developer. Inside the already-created workspace backend/ folder, generate a **production-ready Spring Boot microservice** named `user-onboard-service` implementing the Problem Statement: users self-register -> status PENDING -> admin approves/rejects. The service must support **either** MSSQL (SQL Server) or Oracle as the DB, selected by an environment variable `DB_TYPE` (values: `mssql` or `oracle`) and `JDBC_URL`/`DB_USERNAME`/`DB_PASSWORD`. Default local dev (docker-compose) uses MSSQL.
+
+Key requirements & DB portability notes:
+- The code must be portable across MSSQL and Oracle:
+  - Use generic JPA mappings where possible.
+  - Store UUIDs and enums in portable column types (e.g., `VARCHAR(36)` for UUID, `VARCHAR(16)` for status) to avoid DB-specific UUID/BINARY types.
+  - For Flyway SQL migrations, provide two SQL versions or conditional templates: `V1__init_mssql.sql` and `V1__init_oracle.sql`. Document differences (e.g., Oracle requires `SEQUENCE` and `VARCHAR2` types; SQL Server can use `uniqueidentifier` but we will use `VARCHAR(36)` for portability).
+  - Where DB-specific SQL is required (e.g., upsert or `LIMIT` syntax), use JPA queries or two migration files.
+- Dependencies:
+  - spring-boot-starter-data-jpa, spring-boot-starter-web, spring-boot-starter-security, spring-boot-starter-validation, spring-boot-starter-actuator
+  - Include Microsoft SQL Server JDBC driver dependency reference for local dev (mssql-jdbc). For Oracle, instruct how to add the Oracle JDBC driver:
+    - If the Oracle driver is available in your Maven repo, add the dependency; otherwise document how to add the `ojdbc` jar to the project `libs/` and reference via `system` scope or configure your company Nexus repo. Do NOT embed the driver jar.
+- DB config:
+  - Read `DB_TYPE` env var; verify at startup and log which JDBC driver/URL is in use.
+  - Support `spring.datasource.url` from `JDBC_URL` env var.
+  - Provide `application-local.yml`, `application-test.yml`, `application-prod.yml` with placeholders for MSSQL and Oracle.
+- Schema:
+  - `users` table: `id VARCHAR(36) PRIMARY KEY`, `email VARCHAR(255) UNIQUE NOT NULL`, `password_hash VARCHAR(255)`, `roles VARCHAR(255)`, `status VARCHAR(16)` (PENDING/ACTIVE/REJECTED), `created_at TIMESTAMP`, `updated_at TIMESTAMP`, `metadata CLOB/JSON` (note: for Oracle use `CLOB`, for MSSQL use `NVARCHAR(MAX)` or `JSON` column). Document these differences in README and in migration scripts.
+- Endpoints & flows:
+  - `POST /api/v1/auth/register` — register user (status=PENDING). Validate input and persist.
+  - `POST /api/v1/auth/login` — user login, returns JWT. Supports DB-backed user store.
+  - `POST /api/v1/auth/refresh` — refresh access token using HttpOnly refresh cookie saved in DB for revocation support.
+  - `POST /api/v1/auth/logout` — revoke refresh token.
+  - `GET /api/v1/users/me` — current user profile & status.
+  - Admin endpoints for pending users and approve/reject actions.
+- Persistence & migrations:
+  - Use Flyway for migrations. Provide `db/migration/V1__init_mssql.sql` and `db/migration/V1__init_oracle.sql` with full initial schema for each DB. Keep them explicit and separate.
+  - Provide a sample `db/migration/V2__create_admin_user.sql` showing how to insert an admin user (store hashed password or instruct to run a setup script to hash).
+- Observability / resilience / security:
+  - Actuator endpoints, Micrometer (Prometheus), OpenTelemetry config snippet (OTLP).
+  - Resilience4j for external calls (email).
+  - Logback JSON logs with MDC for correlation.
+  - JWT signed RS256: load keys from mounted files. Provide config and instructions for k8s secret or Vault.
+- Queue decoupling:
+  - Use RabbitMQ (spring-amqp) for background tasks (welcome email on approval). The registration flow should push a message; worker component consumes and handles sending (with circuit-breaker fallback).
+- Tests:
+  - Unit tests (JUnit 5 + Mockito) for services.
+  - Integration test instructions: use docker-compose MSSQL for local tests; for Oracle integration tests include instructions to run tests pointing to Oracle container or managed instance. Provide sample Testcontainers config (note: Testcontainers has limited official Oracle support — document how to run integration tests manually for Oracle or use a shared test database).
+- Dockerfile:
+  - Multi-stage build, non-root user, small final image. Ensure the image includes needed JDBC driver mechanism; if Oracle driver must be added by the user, document how to mount `libs/ojdbc.jar` into the image at build or pass as volume.
+- K8s manifests:
+  - `k8s/deployment.yaml` with env placeholders: `DB_TYPE`, `JDBC_URL`, `DB_USERNAME`, `DB_PASSWORD`, `JWT_KEY_SECRET_NAME`, `RABBITMQ_URL`.
+  - Document how to provision Oracle in K8s (note: often Oracle is provided as managed DB; do not recommend running Oracle in same cluster).
+- README backend/README.md:
+  - How to run locally with MSSQL (docker-compose), and how to enable Oracle local container (steps, license note).
+  - How to swap to Oracle (set `DB_TYPE=oracle`, update `JDBC_URL` and add the Oracle JDBC driver to `backend/libs/` or to your Maven repo).
+  - How to run Flyway migrations for each DB and how to create initial admin user.
+  - Explicit TODOs where drivers/credentials must be provided.
+
+Constraints:
+- Do NOT embed private keys or credentials.
+- Provide clear TODOs where Oracle driver must be provided and how to configure it.
+- Generate full code, config files, Flyway scripts (`V1__init_mssql.sql`, `V1__init_oracle.sql`), Dockerfile, unit tests, integration test instructions, and k8s templates. Mark TODO placeholders clearly.

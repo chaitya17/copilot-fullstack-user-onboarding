@@ -1,0 +1,112 @@
+# Production Configuration - Cloud/Managed Database
+spring:
+  datasource:
+    # Production MSSQL (Azure SQL Database example)
+    url: ${JDBC_URL:jdbc:sqlserver://your-server.database.windows.net:1433;database=useronboard;encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: ${DB_DRIVER_CLASS:com.microsoft.sqlserver.jdbc.SQLServerDriver}
+    
+    # Connection Pool Settings
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      max-lifetime: 1800000
+      connection-timeout: 30000
+  
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: ${HIBERNATE_DIALECT:org.hibernate.dialect.SQLServerDialect}
+        jdbc:
+          time_zone: UTC
+        cache:
+          use_second_level_cache: true
+          region:
+            factory_class: org.hibernate.cache.ehcache.EhCacheRegionFactory
+  
+  flyway:
+    locations: classpath:db/migration/${DB_TYPE:mssql}
+    baseline-on-migrate: false
+    validate-on-migrate: true
+
+# Database Type Configuration
+app:
+  database:
+    type: ${DB_TYPE:mssql}
+
+# Production RabbitMQ Configuration
+spring:
+  rabbitmq:
+    host: ${RABBITMQ_HOST}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    ssl:
+      enabled: ${RABBITMQ_SSL_ENABLED:true}
+    connection-timeout: 30000
+
+# Security Configuration - Uses mounted secrets or Key Vault
+security:
+  jwt:
+    private-key-path: ${JWT_PRIVATE_KEY_PATH:/var/secrets/jwt/private_key.pem}
+    public-key-path: ${JWT_PUBLIC_KEY_PATH:/var/secrets/jwt/public_key.pem}
+    access-token-expiry: ${JWT_ACCESS_TOKEN_EXPIRY:15m}
+    refresh-token-expiry: ${JWT_REFRESH_TOKEN_EXPIRY:7d}
+
+# Email Configuration
+app:
+  email:
+    enabled: ${EMAIL_ENABLED:true}
+    from: ${EMAIL_FROM:noreply@useronboard.com}
+    smtp:
+      host: ${SMTP_HOST}
+      port: ${SMTP_PORT:587}
+      username: ${SMTP_USERNAME}
+      password: ${SMTP_PASSWORD}
+      starttls: ${SMTP_STARTTLS:true}
+
+# Production Monitoring
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+      environment: production
+
+# OpenTelemetry Configuration
+otel:
+  exporter:
+    otlp:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://jaeger:14250}
+  resource:
+    attributes:
+      service.name: user-onboard-service
+      service.version: ${app.version:1.0.0}
+
+# Production Logging
+logging:
+  level:
+    com.useronboard: INFO
+    org.springframework.security: WARN
+    org.hibernate: WARN
+    org.flywaydb: INFO
+    root: WARN
+  pattern:
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: /var/log/user-onboard-service.log

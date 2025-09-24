@@ -1,0 +1,223 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME_BACKEND: ${{ github.repository }}-backend
+  IMAGE_NAME_FRONTEND: ${{ github.repository }}-frontend
+
+jobs:
+  # Security Scanning
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+    
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # Backend Tests - Database Agnostic
+  backend-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        db_type: [mssql, oracle]
+    
+    services:
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2019-latest
+        env:
+          ACCEPT_EULA: Y
+          SA_PASSWORD: TestPassword123!
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd="/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P TestPassword123! -Q 'SELECT 1'"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      
+      # Oracle service for testing (using community image)
+      oracle:
+        image: gvenzl/oracle-xe:21-slim
+        env:
+          ORACLE_PASSWORD: TestPassword123!
+          ORACLE_DATABASE: TESTDB
+        ports:
+          - 1521:1521
+        options: >-
+          --health-cmd="echo 'SELECT 1 FROM DUAL;' | sqlplus -s system/TestPassword123!@//localhost:1521/XEPDB1"
+          --health-interval=30s
+          --health-timeout=10s
+          --health-retries=5
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up JDK 17
+      uses: actions/setup-java@v3
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        
+    - name: Cache Maven dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
+        
+    - name: Generate test JWT keys
+      run: |
+        mkdir -p keys
+        openssl genrsa -out keys/private_key.pem 2048
+        openssl rsa -in keys/private_key.pem -pubout -out keys/public_key.pem
+        
+    - name: Setup Oracle JDBC driver (for Oracle tests)
+      if: matrix.db_type == 'oracle'
+      run: |
+        # TODO: Add Oracle JDBC driver to backend/libs/
+        # This step would download/copy the Oracle JDBC driver
+        # mkdir -p backend/libs
+        # wget https://repo1.maven.org/maven2/com/oracle/database/jdbc/ojdbc8/21.7.0.0/ojdbc8-21.7.0.0.jar -O backend/libs/ojdbc8.jar
+        echo "Oracle JDBC driver setup would go here"
+        
+    - name: Run backend tests - MSSQL
+      if: matrix.db_type == 'mssql'
+      run: |
+        cd backend
+        ./mvnw clean test -DskipTests=false
+      env:
+        DB_TYPE: mssql
+        JDBC_URL: jdbc:sqlserver://localhost:1433;databaseName=tempdb;encrypt=false;trustServerCertificate=true
+        DB_USERNAME: sa
+        DB_PASSWORD: TestPassword123!
+        HIBERNATE_DIALECT: org.hibernate.dialect.SQLServerDialect
+        JWT_PUBLIC_KEY_PATH: ../keys/public_key.pem
+        JWT_PRIVATE_KEY_PATH: ../keys/private_key.pem
+        SPRING_PROFILES_ACTIVE: test
+
+    - name: Run backend tests - Oracle
+      if: matrix.db_type == 'oracle'
+      run: |
+        cd backend
+        # ./mvnw clean test -DskipTests=false
+        echo "Oracle tests would run here (requires JDBC driver)"
+      env:
+        DB_TYPE: oracle
+        JDBC_URL: jdbc:oracle:thin:@localhost:1521/XEPDB1
+        DB_USERNAME: system
+        DB_PASSWORD: TestPassword123!
+        HIBERNATE_DIALECT: org.hibernate.dialect.Oracle12cDialect
+        JWT_PUBLIC_KEY_PATH: ../keys/public_key.pem
+        JWT_PRIVATE_KEY_PATH: ../keys/private_key.pem
+        SPRING_PROFILES_ACTIVE: test
+
+    - name: Upload backend test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: backend-test-results-${{ matrix.db_type }}
+        path: backend/target/surefire-reports/
+
+  # Frontend Tests
+  frontend-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js 18
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+        
+    - name: Install frontend dependencies
+      run: |
+        cd frontend
+        npm ci
+        
+    - name: Run frontend linter
+      run: |
+        cd frontend
+        npm run lint
+        
+    - name: Run frontend tests
+      run: |
+        cd frontend
+        npm test -- --coverage --watchAll=false
+        
+    - name: Upload frontend test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: frontend-test-results
+        path: frontend/coverage/
+
+  # Docker Build Test
+  docker-build-test:
+    runs-on: ubuntu-latest
+    needs: [backend-test, frontend-test]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+      
+    - name: Build backend Docker image
+      run: |
+        cd backend
+        docker build -t ${{ env.IMAGE_NAME_BACKEND }}:test \
+          --build-arg DB_TYPE=mssql \
+          --build-arg JDBC_URL="jdbc:h2:mem:testdb" \
+          --build-arg DB_USERNAME=sa \
+          --build-arg DB_PASSWORD=test \
+          --build-arg SPRING_PROFILES_ACTIVE=test \
+          .
+        
+    - name: Build frontend Docker image  
+      run: |
+        cd frontend
+        docker build -t ${{ env.IMAGE_NAME_FRONTEND }}:test .
+
+    - name: Test Docker containers
+      run: |
+        # Test backend container startup
+        docker run --name backend-test -d -p 8080:8080 \
+          -e DB_TYPE=mssql \
+          -e JDBC_URL="jdbc:h2:mem:testdb" \
+          -e DB_USERNAME=sa \
+          -e DB_PASSWORD=test \
+          -e SPRING_PROFILES_ACTIVE=test \
+          ${{ env.IMAGE_NAME_BACKEND }}:test
+        
+        sleep 30
+        docker logs backend-test
+        docker stop backend-test
+        
+        # Test frontend container startup
+        docker run --name frontend-test -d -p 3000:3000 \
+          ${{ env.IMAGE_NAME_FRONTEND }}:test
+        
+        sleep 10
+        docker logs frontend-test
+        docker stop frontend-test

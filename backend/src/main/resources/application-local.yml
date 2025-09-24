@@ -1,0 +1,65 @@
+# Local Development Configuration (MSSQL default, Oracle optional)
+spring:
+  datasource:
+    # MSSQL Configuration (default)
+    url: ${JDBC_URL:jdbc:sqlserver://mssql:1433;databaseName=useronboard;encrypt=false;trustServerCertificate=true}
+    username: ${DB_USERNAME:sa}
+    password: ${DB_PASSWORD:YourStrong!Passw0rd}
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+    
+    # Oracle Configuration (uncomment when using Oracle)
+    # url: ${JDBC_URL:jdbc:oracle:thin:@oracle:1521/XEPDB1}
+    # username: ${DB_USERNAME:system}
+    # password: ${DB_PASSWORD:YourOraclePassword123}
+    # driver-class-name: oracle.jdbc.OracleDriver
+  
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+    properties:
+      hibernate:
+        # MSSQL Dialect (default)
+        dialect: ${HIBERNATE_DIALECT:org.hibernate.dialect.SQLServerDialect}
+        # Oracle Dialect (uncomment when using Oracle)
+        # dialect: ${HIBERNATE_DIALECT:org.hibernate.dialect.Oracle12cDialect}
+        format_sql: true
+        generate_statistics: true
+  
+  flyway:
+    locations: classpath:db/migration/${DB_TYPE:mssql}
+    baseline-on-migrate: true
+
+# Database Type Configuration
+app:
+  database:
+    type: ${DB_TYPE:mssql}  # Values: mssql or oracle
+
+# RabbitMQ Local Configuration
+spring:
+  rabbitmq:
+    host: ${RABBITMQ_HOST:rabbitmq}
+    port: 5672
+    username: guest
+    password: guest
+
+# Security Configuration
+security:
+  jwt:
+    private-key-path: ${JWT_PRIVATE_KEY_PATH:./keys/private_key.pem}
+    public-key-path: ${JWT_PUBLIC_KEY_PATH:./keys/public_key.pem}
+
+# Email Configuration (disabled for local dev)
+app:
+  email:
+    enabled: false
+
+# Enhanced Logging for Development
+logging:
+  level:
+    com.useronboard: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.web: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    org.flywaydb: INFO

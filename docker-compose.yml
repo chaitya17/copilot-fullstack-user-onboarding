@@ -1,0 +1,168 @@
+version: '3.8'
+
+services:
+  # MS SQL Server - Default database for local development
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=${MSSQL_SA_PASSWORD:-YourStrong!Passw0rd}
+    ports:
+      - "1433:1433"
+    volumes:
+      - mssql_data:/var/opt/mssql
+      - ./scripts/mssql:/docker-entrypoint-initdb.d
+    networks:
+      - user-onboard-network
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P ${MSSQL_SA_PASSWORD:-YourStrong!Passw0rd} -Q 'SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Oracle XE - Alternative database (COMMENTED OUT BY DEFAULT)
+  # IMPORTANT: Oracle images require accepting license agreements
+  # Common public images: gvenzl/oracle-xe, oracleinanutshell/oracle-xe-11g
+  # Production note: Oracle is typically provided as managed service, not run in K8s
+  # oracle:
+  #   image: gvenzl/oracle-xe:21-slim  # Community image - check license compliance
+  #   # Alternative: container-registry.oracle.com/database/express:21.3.0-xe (requires Oracle account)
+  #   environment:
+  #     - ORACLE_PASSWORD=${ORACLE_SYS_PASSWORD:-OraclePassword123}
+  #     - ORACLE_DATABASE=XEPDB1
+  #     - ORACLE_CHARACTERSET=AL32UTF8
+  #   ports:
+  #     - "1521:1521"
+  #   volumes:
+  #     - oracle_data:/opt/oracle/oradata
+  #     - ./scripts/oracle:/docker-entrypoint-initdb.d
+  #   networks:
+  #     - user-onboard-network
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "echo 'SELECT 1 FROM DUAL;' | sqlplus -s system/$$ORACLE_PASSWORD@//localhost:1521/XEPDB1"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 5
+  #   # ORACLE NOTES:
+  #   # 1. Ensure Oracle JDBC driver is added to backend/libs/ojdbc8.jar
+  #   # 2. Uncomment Oracle dependency in backend/pom.xml
+  #   # 3. Set DB_TYPE=oracle in environment variables
+  #   # 4. Update JDBC_URL to use Oracle connection string
+
+  # RabbitMQ for message queuing
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USERNAME:-guest}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "5672:5672"    # AMQP port
+      - "15672:15672"  # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - user-onboard-network
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Backend Spring Boot application
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      - DB_TYPE=${DB_TYPE:-mssql}
+      - JDBC_URL=${JDBC_URL:-jdbc:sqlserver://mssql:1433;databaseName=useronboard;encrypt=false;trustServerCertificate=true}
+      # Oracle JDBC URL example: jdbc:oracle:thin:@oracle:1521/XEPDB1
+      - DB_USERNAME=${DB_USERNAME:-sa}
+      - DB_PASSWORD=${DB_PASSWORD:-YourStrong!Passw0rd}
+      - HIBERNATE_DIALECT=${HIBERNATE_DIALECT:-org.hibernate.dialect.SQLServerDialect}
+      # Oracle dialect: org.hibernate.dialect.Oracle12cDialect
+      - JWT_PUBLIC_KEY_PATH=${JWT_PUBLIC_KEY_PATH:-/app/keys/public_key.pem}
+      - JWT_PRIVATE_KEY_PATH=${JWT_PRIVATE_KEY_PATH:-/app/keys/private_key.pem}
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-guest}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-guest}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-local}
+      - EMAIL_ENABLED=${EMAIL_ENABLED:-false}
+    ports:
+      - "8080:8080"
+    depends_on:
+      mssql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - ./keys:/app/keys:ro
+    networks:
+      - user-onboard-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Frontend React application
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      - VITE_API_URL=${FRONTEND_API_URL:-http://localhost:8080}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - user-onboard-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Prometheus for monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - user-onboard-network
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infrastructure/monitoring/grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - user-onboard-network
+
+volumes:
+  mssql_data:
+  # oracle_data:  # Uncomment when using Oracle
+  rabbitmq_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  user-onboard-network:
+    name: user-onboard-network

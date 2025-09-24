@@ -1,0 +1,115 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: user-onboard-service
+  
+  # Database Configuration - Supports both MSSQL and Oracle
+  datasource:
+    url: ${JDBC_URL:jdbc:sqlserver://localhost:1433;databaseName=useronboard;encrypt=false;trustServerCertificate=true}
+    username: ${DB_USERNAME:sa}
+    password: ${DB_PASSWORD:YourStrong!Passw0rd}
+    driver-class-name: ${DB_DRIVER_CLASS:com.microsoft.sqlserver.jdbc.SQLServerDriver}
+  
+  # JPA Configuration
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: ${HIBERNATE_DIALECT:org.hibernate.dialect.SQLServerDialect}
+        format_sql: true
+        use_sql_comments: true
+        jdbc:
+          time_zone: UTC
+  
+  # Flyway Configuration
+  flyway:
+    enabled: true
+    locations: classpath:db/migration/${DB_TYPE:mssql}
+    baseline-on-migrate: true
+    validate-on-migrate: true
+    out-of-order: false
+  
+  # RabbitMQ Configuration
+  rabbitmq:
+    host: ${RABBITMQ_HOST:rabbitmq}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    listener:
+      simple:
+        retry:
+          enabled: true
+          initial-interval: 1s
+          max-attempts: 3
+          max-interval: 10s
+          multiplier: 2.0
+
+# Security Configuration
+security:
+  jwt:
+    private-key-path: ${JWT_PRIVATE_KEY_PATH:/app/keys/private_key.pem}
+    public-key-path: ${JWT_PUBLIC_KEY_PATH:/app/keys/public_key.pem}
+    access-token-expiry: ${JWT_ACCESS_TOKEN_EXPIRY:15m}
+    refresh-token-expiry: ${JWT_REFRESH_TOKEN_EXPIRY:7d}
+
+# Database Type Configuration
+app:
+  database:
+    type: ${DB_TYPE:mssql}
+  
+  # Email Configuration (for welcome emails)
+  email:
+    enabled: ${EMAIL_ENABLED:false}
+    from: ${EMAIL_FROM:noreply@useronboard.com}
+    smtp:
+      host: ${SMTP_HOST:localhost}
+      port: ${SMTP_PORT:587}
+      username: ${SMTP_USERNAME:}
+      password: ${SMTP_PASSWORD:}
+
+# Management and Monitoring
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+
+# Resilience4j Configuration
+resilience4j:
+  circuitbreaker:
+    instances:
+      emailService:
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+  retry:
+    instances:
+      emailService:
+        max-attempts: 3
+        wait-duration: 1s
+
+# Logging Configuration
+logging:
+  level:
+    com.useronboard: INFO
+    org.springframework.security: DEBUG
+    org.flywaydb: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
